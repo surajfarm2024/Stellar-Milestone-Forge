@@ -2,21 +2,20 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
+    testutils::Address as _,
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env, IntoVal, Symbol,
+    Address, Env, Symbol,
 };
-
 
 fn setup_env() -> (Env, Address, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
     
-    let contract_id = env.register_contract(None, MilestoneForge);
+    let contract_id = env.register(MilestoneForge, ());
 
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract(token_admin.clone());
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
     let client_addr = Address::generate(&env);
@@ -26,6 +25,7 @@ fn setup_env() -> (Env, Address, Address, Address, Address) {
 
     (env, contract_id, token_id, client_addr, contractor_addr)
 }
+
 
 #[test]
 fn test_full_lifecycle_withdraw() {
@@ -48,9 +48,9 @@ fn test_full_lifecycle_withdraw() {
 
     
     assert_eq!(token.balance(&contract_id), budget);
-    assert_eq!(token.balance(&client_addr), 700_0000000); // 1000 - 300
+    assert_eq!(token.balance(&client_addr), 700_0000000); 
 
-  
+    
     forge.approve_phase(&deal_id, &0_u32);
     forge.approve_phase(&deal_id, &1_u32);
     forge.approve_phase(&deal_id, &2_u32);
@@ -61,7 +61,6 @@ fn test_full_lifecycle_withdraw() {
     
     forge.withdraw(&deal_id);
 
-    
     assert_eq!(token.balance(&contractor_addr), budget);
     assert_eq!(token.balance(&contract_id), 0);
 
@@ -78,7 +77,7 @@ fn test_partial_withdraw_proportional() {
     let token = TokenClient::new(&env, &token_id);
 
     let deal_id = Symbol::new(&env, "proj_beta");
-    let budget: i128 = 400_0000000; // 400 XLM
+    let budget: i128 = 400_0000000; 
 
     forge.init_agreement(
         &deal_id,
@@ -93,12 +92,12 @@ fn test_partial_withdraw_proportional() {
     forge.approve_phase(&deal_id, &0_u32);
     forge.approve_phase(&deal_id, &1_u32);
 
-   
+    
     forge.withdraw(&deal_id);
     assert_eq!(token.balance(&contractor_addr), 200_0000000);
     assert_eq!(token.balance(&contract_id), 200_0000000);
 
-   
+    
     forge.approve_phase(&deal_id, &2_u32);
 
     
@@ -109,7 +108,6 @@ fn test_partial_withdraw_proportional() {
     let agreement = forge.get_agreement(&deal_id);
     assert_eq!(agreement.disbursed, 300_0000000);
 }
-
 
 
 #[test]
@@ -136,11 +134,9 @@ fn test_terminate_refunds_remainder() {
     forge.approve_phase(&deal_id, &0_u32);
     forge.approve_phase(&deal_id, &1_u32);
 
-   
+    
     forge.withdraw(&deal_id);
     assert_eq!(token.balance(&contractor_addr), 200_0000000);
-
-    
     assert_eq!(token.balance(&client_addr), client_initial - budget);
 
     
@@ -148,17 +144,11 @@ fn test_terminate_refunds_remainder() {
 
     assert_eq!(token.balance(&contract_id), 0);
     assert_eq!(token.balance(&contractor_addr), 200_0000000); 
-    
-    assert_eq!(token.balance(&client_addr), client_initial - budget + 300_0000000);
+    assert_eq!(token.balance(&client_addr), client_initial - budget + 300_0000000); 
 
     
-    let result = std::panic::catch_unwind(|| {
-        env.as_contract(&contract_id, || {
-            env.storage()
-                .instance()
-                .get::<Symbol, Agreement>(&deal_id)
-                .unwrap() 
-        });
+    env.as_contract(&contract_id, || {
+        let exists = env.storage().instance().has(&deal_id);
+        assert!(!exists, "Agreement should have been removed after termination");
     });
-    assert!(result.is_err(), "Agreement should have been removed after termination");
 }
